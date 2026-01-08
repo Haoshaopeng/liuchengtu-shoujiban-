@@ -3,32 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DeepFlow Canvas Mobile - 触控增强版</title>
+    <title>DeepFlow Canvas Mobile - 丝滑优化版</title>
     
+    <!-- 1. 基础库 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
+    <!-- 2. PDF 处理 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     
+    <!-- 3. 公式与图表 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; user-select: none; -webkit-tap-highlight-color: transparent; }
+        /* 强制禁止浏览器默认的滚动和缩放行为 */
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            height: 100%; 
+            width: 100%;
+            user-select: none; 
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent; 
+            touch-action: none; 
+            background-color: #f1f5f9;
+        }
+        
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         
-        /* 关键：禁用默认触控行为，交给JS处理 */
-        .touch-none { touch-action: none; }
-        
         .grabbing * { cursor: grabbing !important; }
         
-        /* 节点样式 */
+        /* 节点内容样式 */
         .node-content h1, .node-content h2 { font-weight: bold; margin-bottom: 0.5em; font-size: 1.1em; }
         .node-content p { margin-bottom: 0.5em; line-height: 1.6; text-align: justify; font-size: 0.95em; }
         .node-content ul { list-style-type: disc; padding-left: 1.2em; margin-bottom: 0.5em; }
@@ -43,23 +56,24 @@
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans">
-    <div id="root"></div>
+    <div id="root" class="w-full h-full"></div>
 
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback, useMemo, memo } = React;
 
         mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose', fontFamily: 'sans-serif' });
 
-        if (typeof pdfjsLib !== 'undefined') {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
-        }
+        try {
+            if (typeof pdfjsLib !== 'undefined') {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+            }
+        } catch(e) { console.error("PDF Worker Init Error", e); }
 
         const Icons = {
             Database: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
             X: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
             Play: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
             Check: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>,
-            AlertTriangle: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
             Loader: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>,
             Layers: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
             Trash2: (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
@@ -81,7 +95,6 @@
           { border: 'border-rose-500', bg: 'bg-rose-50', text: 'text-rose-900', badge: 'bg-rose-100 text-rose-700' },
         ];
 
-        // --- 组件: 渲染节点内容 ---
         const RenderedContent = memo(({ content }) => {
             const containerRef = useRef(null);
             useEffect(() => {
@@ -163,7 +176,15 @@
 
             if (!response.ok) {
                 const err = await response.json().catch(()=>({}));
-                throw new Error(err.error?.message || "网络请求失败");
+                // 自动翻译常见错误
+                let errMsg = err.error?.message || "网络请求失败";
+                if (errMsg.toLowerCase().includes("insufficient balance")) {
+                    errMsg = "⚠️ API 余额不足 (Insufficient Balance)\n\n您的 DeepSeek API Key 余额已用完。\n1. 请前往官网 console.deepseek.com 充值。\n2. 或者切换到「网页版模式」免费使用。";
+                } else if (errMsg.includes("Invalid API key") || errMsg.includes("authentication")) {
+                    errMsg = "❌ API Key 无效\n请检查 Key 是否复制完整，或是否已过期。";
+                }
+                
+                throw new Error(errMsg);
             }
             const data = await response.json();
             const content = data.choices?.[0]?.message?.content || "{}";
@@ -190,7 +211,6 @@
                 
                 const width = nodeData.width || (depth === 0 ? 320 : 380);
                 const height = nodeData.height || 'auto';
-                
                 let nodeY;
 
                 if (hasChildren && !isCollapsed) {
@@ -312,13 +332,12 @@
             const [sidebarOpen, setSidebarOpen] = useState(true);
             const [manualModal, setManualModal] = useState({ open: false, prompt: '' });
             const [collapsedNodes, setCollapsedNodes] = useState(new Set()); 
+            const [isLoading, setIsLoading] = useState(false); 
 
             const [interaction, setInteraction] = useState({ type: null, targetId: null, startX: 0, startY: 0 }); 
             const canvasRef = useRef(null);
 
-            // 触控相关状态
             const lastTouchDistance = useRef(null);
-            const lastTouchCenter = useRef(null);
 
             useEffect(() => { localStorage.setItem('df_config_v5', JSON.stringify(config)); }, [config]);
             useEffect(() => { localStorage.setItem('df_projects_v5_final', JSON.stringify(projects)); }, [projects]);
@@ -338,20 +357,13 @@
                 当前任务：深度解析章节 "${nodeTitle}"。
                 章节概要：${nodeDesc}
                 全文参考：${context.substring(0, 80000)}...
-                
                 【核心生成要求】
                 1. **嵌套结构**：请生成该章节下的子节点（Level 2），子节点下有细节请继续生成（Level 3）。
                 2. **内容详实**：不要遗漏实验数据、公式、模块。
                 3. **图表增强**：用 Mermaid。
                 4. **公式增强**：用 LaTeX $$...$$。
                 5. **全中文输出**。
-
-                输出JSON格式：
-                {
-                    "children": [
-                        { "title": "...", "description": "...", "children": [] }
-                    ]
-                }
+                输出JSON格式：{ "children": [ { "title": "...", "description": "...", "children": [] } ] }
             `;
 
             const getManualPrompt = () => `
@@ -365,7 +377,6 @@
                 if (newSet.has(nodeId)) newSet.delete(nodeId);
                 else newSet.add(nodeId);
                 setCollapsedNodes(newSet);
-                
                 setProjects(prev => prev.map(p => {
                     if (p.id !== activeId) return p;
                     const { nodes, edges } = layoutTree(p.rootData, 400, 300, newSet);
@@ -379,15 +390,13 @@
 
                 setIsGenerating(true);
                 setGenProgress({ current: 0, total: 1, currentLabel: '正在扫描全文结构...' });
-                
-                // 手机上自动收起侧边栏以查看进度
                 if (window.innerWidth < 768) setSidebarOpen(false);
 
                 try {
                     const skeletonPrompt = getSkeletonPrompt(activeProject.context);
                     const skeletonJson = await callAI_API(config, skeletonPrompt, "你是一个严谨的 JSON 生成器。");
-                    
                     const rootData = skeletonJson.root;
+                    
                     const assignIds = (node) => {
                         if (!node.id) node.id = generateId();
                         if (node.children) node.children.forEach(assignIds);
@@ -395,7 +404,6 @@
                     assignIds(rootData);
 
                     const { nodes, edges } = layoutTree(rootData, 400, 300, collapsedNodes);
-                    
                     setProjects(prev => prev.map(p => p.id === activeId ? { ...p, rootData, nodes, edges } : p));
 
                     const newQueue = rootData.children.map(node => ({
@@ -404,9 +412,8 @@
 
                     setGenQueue(newQueue);
                     setGenProgress({ current: 0, total: newQueue.length, currentLabel: '准备深度生成...' });
-
                 } catch (e) {
-                    alert("初始化失败: " + e.message);
+                    alert("错误: " + e.message);
                     setIsGenerating(false);
                     setSidebarOpen(true);
                 }
@@ -420,7 +427,6 @@
                 const processTask = async () => {
                     setGenQueue(q => q.map(t => t.id === pendingTask.id ? { ...t, status: 'processing' } : t));
                     setGenProgress(prev => ({ ...prev, currentLabel: `正在深度解析: ${pendingTask.title}` }));
-
                     try {
                         const prompt = getExpansionPrompt(pendingTask.title, pendingTask.desc, activeProject.context);
                         const result = await callAI_API(config, prompt, "你是一个学术助手。请输出包含嵌套结构的 JSON。");
@@ -428,34 +434,22 @@
                         setProjects(prev => {
                             const curProj = prev.find(p => p.id === activeId);
                             if (!curProj) return prev;
-
                             const updateTree = (node) => {
                                 if (node.id === pendingTask.nodeId) {
                                     const newChildren = result.children || [];
-                                    const recursiveAssign = (n) => {
-                                        n.id = generateId();
-                                        if (n.children) n.children.forEach(recursiveAssign);
-                                    };
+                                    const recursiveAssign = (n) => { n.id = generateId(); if (n.children) n.children.forEach(recursiveAssign); };
                                     newChildren.forEach(recursiveAssign);
                                     node.children = newChildren;
                                     return true;
                                 }
-                                if (node.children) {
-                                    for (let child of node.children) {
-                                        if (updateTree(child)) return true;
-                                    }
-                                }
+                                if (node.children) { for (let child of node.children) { if (updateTree(child)) return true; } }
                                 return false;
                             };
-
                             const newRootData = JSON.parse(JSON.stringify(curProj.rootData));
                             updateTree(newRootData);
-
                             const { nodes, edges } = layoutTree(newRootData, 400, 300, collapsedNodes);
-
                             return prev.map(p => p.id === activeId ? { ...p, rootData: newRootData, nodes, edges } : p);
                         });
-
                         setGenQueue(q => q.map(t => t.id === pendingTask.id ? { ...t, status: 'completed' } : t));
                         setGenProgress(prev => ({ ...prev, current: prev.current + 1 }));
                     } catch (e) {
@@ -477,7 +471,6 @@
                 };
                 setProjects([...projects, newProj]);
                 setActiveId(newId);
-                // 移动端新建后收起侧边栏
                 if (window.innerWidth < 768) setSidebarOpen(false);
             };
 
@@ -499,14 +492,11 @@
                     const rootData = json.root || json;
                     const assignIds = (n) => { if(!n.id) n.id=generateId(); if(n.children) n.children.forEach(assignIds); };
                     assignIds(rootData);
-
                     const { nodes, edges } = layoutTree(rootData, 400, 300, collapsedNodes);
                     setProjects(prev => prev.map(p => p.id === activeId ? { ...p, rootData, nodes, edges } : p));
                     return true;
                 } catch (e) { console.error(e); return false; }
             };
-
-            // --- 统一的输入处理 (Mouse & Touch) ---
 
             const getPointerPos = (e) => {
                 if (e.touches && e.touches.length > 0) {
@@ -521,10 +511,9 @@
                 return Math.sqrt(dx * dx + dy * dy);
             };
 
-            // 鼠标按下 / 手指按下
             const handleStart = (e, type, targetId = null) => {
-                // 触摸时，如果是双指，不进入拖拽模式，进入缩放模式逻辑
                 if (e.touches && e.touches.length === 2) return;
+                if (e.button && e.button !== 0) return;
 
                 const pos = getPointerPos(e);
                 let targetNode = targetId ? activeProject.nodes.find(n => n.id === targetId) : null;
@@ -538,14 +527,13 @@
                 });
             };
 
-            // 鼠标移动 / 手指移动
             const handleMove = (e) => {
-                // 双指缩放 (Pinch to Zoom)
                 if (e.touches && e.touches.length === 2) {
                     const dist = getTouchDistance(e.touches);
                     if (lastTouchDistance.current) {
                         const delta = dist - lastTouchDistance.current;
-                        const zoomFactor = delta * 0.005; // 缩放灵敏度
+                        // 降低缩放灵敏度 (原 0.005 -> 0.002)
+                        const zoomFactor = delta * 0.002;
                         setTransform(p => ({ ...p, k: Math.max(0.1, Math.min(5, p.k + zoomFactor)) }));
                     }
                     lastTouchDistance.current = dist;
@@ -555,8 +543,10 @@
                 if (!interaction.type) return;
                 
                 const pos = getPointerPos(e);
-                const dx = pos.x - interaction.startX;
-                const dy = pos.y - interaction.startY;
+                // 增加阻尼系数 0.85，让移动“慢一点、稳一点”
+                const damping = 0.85;
+                const dx = (pos.x - interaction.startX) * damping;
+                const dy = (pos.y - interaction.startY) * damping;
                 const k = transform.k;
 
                 if (interaction.type === 'canvas') {
@@ -582,37 +572,44 @@
                 lastTouchDistance.current = null;
             };
 
-            const handleTouchStart = (e) => {
-                if (e.touches.length === 2) {
-                    lastTouchDistance.current = getTouchDistance(e.touches);
-                } else {
-                    handleStart(e, 'canvas');
-                }
-            };
-
             const onFileChange = async (e) => {
                 const files = e.target.files;
                 if (files && files.length > 0) {
-                    handlePDFFile(files[0]);
+                    await handlePDFFile(files[0]);
+                    e.target.value = ""; 
                 }
             };
 
             const handlePDFFile = async (file) => {
-                if (file.type !== 'application/pdf') return alert("请选择 PDF 文件");
-                try {
-                    const { text, coverImage } = await processPDF(file);
-                    setProjects(prev => prev.map(p => p.id === activeId ? { 
-                        ...p, context: text, coverImage, title: file.name.replace('.pdf',''),
-                        rootData: { ...p.rootData, text: file.name.replace('.pdf','') }, 
-                        nodes: p.nodes.map(n => n.type==='root' ? {...n, text: file.name.replace('.pdf','')} : n)
-                    } : p));
-                    alert(`✅ PDF 已加载: ${file.name}`);
-                } catch (e) { alert("PDF 解析失败: " + e.message); }
+                const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                if (!isPDF) return alert("请选择 PDF 文件 (文件名需以 .pdf 结尾)");
+
+                setIsLoading(true);
+                if (window.innerWidth < 768) setSidebarOpen(false);
+
+                setTimeout(async () => {
+                    try {
+                        const { text, coverImage } = await processPDF(file);
+                        if (!text || text.length < 50) throw new Error("PDF 内容似乎为空或无法识别文本。");
+
+                        setProjects(prev => prev.map(p => p.id === activeId ? { 
+                            ...p, context: text, coverImage, title: file.name.replace('.pdf',''),
+                            rootData: { ...p.rootData, text: file.name.replace('.pdf','') }, 
+                            nodes: p.nodes.map(n => n.type==='root' ? {...n, text: file.name.replace('.pdf','')} : n)
+                        } : p));
+                        
+                        alert(`✅ PDF 已加载成功！\n文件: ${file.name}\n字数: ${text.length}`);
+                    } catch (e) { 
+                        alert("❌ PDF 解析失败: " + e.message); 
+                    } finally {
+                        setIsLoading(false);
+                    }
+                }, 100);
             };
 
             const onDrop = (e) => {
                 e.preventDefault();
-                const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+                const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
                 if (files.length > 0) handlePDFFile(files[0]);
             };
 
@@ -620,31 +617,47 @@
             const zoomOut = () => setTransform(p => ({ ...p, k: Math.max(0.1, p.k - 0.2) }));
             const resetView = () => setTransform({ x: 0, y: 0, k: 1 });
 
+            // 动态控制 transition：交互时为 'none' (极速响应)，空闲时为 'transform 0.3s' (平滑过渡)
+            const canvasStyle = {
+                transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
+                transition: interaction.type ? 'none' : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                transformOrigin: '0 0'
+            };
+
             return (
-                <div className="w-full h-screen bg-slate-100 flex overflow-hidden touch-none" 
+                <div className="w-full h-full bg-slate-100 flex overflow-hidden" 
                      onMouseMove={handleMove} onMouseUp={handleEnd} onMouseLeave={handleEnd}
                      onTouchMove={handleMove} onTouchEnd={handleEnd} onTouchCancel={handleEnd}
                      onDragOver={e=>e.preventDefault()} onDrop={onDrop}>
                     
-                    <ManualModal isOpen={manualModal.open} onClose={() => setManualModal({ ...manualModal, open: false })} prompt={manualModal.prompt} onImport={handleManualImport}/>
-                    <input type="file" ref={fileInputRef} className="hidden" accept="application/pdf" onChange={onFileChange} />
+                    {isLoading && (
+                        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center flex-col text-white backdrop-blur-sm">
+                            <Icons.Loader className="w-12 h-12 animate-spin mb-4"/>
+                            <div className="font-bold text-lg">正在解析 PDF 文件...</div>
+                            <div className="text-sm opacity-80 mt-2">大文件可能需要几秒钟，请稍候</div>
+                        </div>
+                    )}
 
-                    {/* 侧边栏 - 响应式修改 */}
+                    <ManualModal isOpen={manualModal.open} onClose={() => setManualModal({ ...manualModal, open: false })} prompt={manualModal.prompt} onImport={handleManualImport}/>
+                    <input type="file" ref={fileInputRef} className="hidden" accept="application/pdf,.pdf" onChange={onFileChange} />
+
+                    {/* 侧边栏 */}
                     <div className={`fixed left-0 top-0 h-full w-full md:w-80 bg-white shadow-xl z-20 flex flex-col transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-4 bg-slate-900 text-white flex justify-between items-center h-14 shrink-0">
                             <span className="font-bold flex items-center gap-2"><Icons.Database className="w-5 h-5"/> DeepFlow Mobile</span>
                             <button onClick={() => setSidebarOpen(false)} className="p-2 -mr-2"><Icons.X className="w-6 h-6 text-slate-400"/></button>
                         </div>
                         <div className="p-4 border-b space-y-4 overflow-y-auto max-h-[40vh] md:max-h-none">
-                            <button onClick={() => fileInputRef.current.click()} className="w-full py-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 font-bold hover:border-blue-500 hover:text-blue-500 flex items-center justify-center gap-2 transition-colors">
-                                <Icons.Upload className="w-5 h-5"/> 点击导入 PDF 文件
+                            <button onClick={() => fileInputRef.current.click()} className="w-full py-4 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 font-bold hover:border-blue-500 hover:text-blue-500 flex items-center justify-center gap-2 transition-colors active:bg-blue-50">
+                                <Icons.Upload className="w-6 h-6"/> 点击导入 PDF 文件
                             </button>
+                            <div className="text-xs text-center text-slate-400">支持点击上方按钮或直接拖拽文件</div>
 
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">AI 模式</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">模式选择</label>
                                 <div className="flex bg-slate-100 p-1 rounded">
-                                    <button onClick={() => setConfig({...config, provider: 'deepseek'})} className={`flex-1 py-2 text-xs font-bold rounded ${config.provider==='deepseek'?'bg-white shadow text-blue-600':'text-slate-500'}`}>API 模式</button>
-                                    <button onClick={() => setConfig({...config, provider: 'manual'})} className={`flex-1 py-2 text-xs font-bold rounded ${config.provider==='manual'?'bg-white shadow text-purple-600':'text-slate-500'}`}>网页版模式</button>
+                                    <button onClick={() => setConfig({...config, provider: 'deepseek'})} className={`flex-1 py-2 text-xs font-bold rounded ${config.provider==='deepseek'?'bg-white shadow text-blue-600':'text-slate-500'}`}>API 直连</button>
+                                    <button onClick={() => setConfig({...config, provider: 'manual'})} className={`flex-1 py-2 text-xs font-bold rounded ${config.provider==='manual'?'bg-white shadow text-purple-600':'text-slate-500'}`}>网页版复制</button>
                                 </div>
                             </div>
                             {config.provider === 'deepseek' && (
@@ -657,7 +670,7 @@
                                 </div>
                             )}
                             {config.provider === 'manual' && (
-                                <button onClick={() => setManualModal({ open: true, prompt: getManualPrompt() })} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold flex items-center justify-center gap-2">
+                                <button onClick={() => setManualModal({ open: true, prompt: getManualPrompt() })} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold flex items-center justify-center gap-2 active:bg-purple-800">
                                     <Icons.Layers className="w-5 h-5"/> 获取指令 / 导入JSON
                                 </button>
                             )}
@@ -683,24 +696,28 @@
                     
                     {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} className="fixed left-4 top-4 z-50 p-3 bg-white shadow-lg rounded-full border border-slate-200 hover:bg-slate-50 active:scale-95"><Icons.Database className="w-6 h-6 text-slate-700"/></button>}
 
-                    {/* 缩放控制栏 - 移动端优化 */}
-                    <div className="fixed right-4 bottom-8 z-50 flex flex-col gap-3">
+                    {/* 缩放控制栏 */}
+                    <div className="fixed right-4 bottom-8 z-50 flex flex-col gap-3 pointer-events-auto">
                         <div className="bg-white/90 backdrop-blur p-2 rounded-2xl shadow-xl border border-slate-200 flex flex-col gap-2">
-                            <button onClick={zoomIn} className="p-3 hover:bg-slate-100 rounded-xl text-slate-600 active:scale-95 active:bg-slate-200" title="放大"><Icons.ZoomIn className="w-6 h-6"/></button>
-                            <button onClick={zoomOut} className="p-3 hover:bg-slate-100 rounded-xl text-slate-600 active:scale-95 active:bg-slate-200" title="缩小"><Icons.ZoomOut className="w-6 h-6"/></button>
+                            <button onClick={zoomIn} className="p-3 hover:bg-slate-100 rounded-xl text-slate-600 active:scale-95 active:bg-slate-200"><Icons.ZoomIn className="w-6 h-6"/></button>
+                            <button onClick={zoomOut} className="p-3 hover:bg-slate-100 rounded-xl text-slate-600 active:scale-95 active:bg-slate-200"><Icons.ZoomOut className="w-6 h-6"/></button>
                             <div className="h-px bg-slate-200 mx-2"></div>
-                            <button onClick={resetView} className="p-3 hover:bg-slate-100 rounded-xl text-slate-600 active:scale-95 active:bg-slate-200" title="复位"><Icons.RotateCcw className="w-6 h-6"/></button>
+                            <button onClick={resetView} className="p-3 hover:bg-slate-100 rounded-xl text-slate-600 active:scale-95 active:bg-slate-200"><Icons.RotateCcw className="w-6 h-6"/></button>
                         </div>
                     </div>
 
                     {/* 画布区域 */}
-                    <div ref={canvasRef} className={`flex-1 relative overflow-hidden ${interaction.type === 'canvas' ? 'cursor-grabbing' : 'cursor-grab'}`} style={{ backgroundSize: '24px 24px', backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)', backgroundColor: '#f8fafc' }} 
+                    <div ref={canvasRef} className="flex-1 relative overflow-hidden" 
+                         style={{ backgroundSize: '24px 24px', backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)', backgroundColor: '#f8fafc', cursor: interaction.type === 'canvas' ? 'grabbing' : 'grab' }} 
                          onMouseDown={(e) => handleStart(e, 'canvas')} 
-                         onTouchStart={handleTouchStart}
-                         onWheel={e => {
-                            if (e.ctrlKey) { e.preventDefault(); setTransform(p => ({ ...p, k: Math.max(0.1, p.k - e.deltaY * 0.001) })); } else { setTransform(p => ({ ...p, x: p.x - e.deltaX, y: p.y - e.deltaY })); }
-                        }}>
-                        <div className="absolute top-0 left-0 transition-transform duration-75 origin-top-left" style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})` }}>
+                         onTouchStart={(e) => {
+                             if (e.touches.length === 2) {
+                                 lastTouchDistance.current = getTouchDistance(e.touches);
+                             } else {
+                                 handleStart(e, 'canvas');
+                             }
+                         }}>
+                        <div className="absolute top-0 left-0" style={canvasStyle}>
                             <svg className="absolute overflow-visible pointer-events-none">
                                 {activeProject.edges.map((e, i) => {
                                     const s = activeProject.nodes.find(n => n.id === e.from);
@@ -736,7 +753,6 @@
                                         </div>
                                         <div className="pointer-events-auto"><RenderedContent content={node.desc} /></div>
                                     </div>
-                                    {/* 增大拖拽把手触控区域 */}
                                     <div className="absolute bottom-0 right-0 w-8 h-8 cursor-se-resize flex items-center justify-center bg-slate-50 opacity-50 group-hover:opacity-100 rounded-tl-lg" 
                                          onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'resize', node.id); }}
                                          onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'resize', node.id); }}>
